@@ -1,161 +1,72 @@
-# Yandex Music на системном Electron (Manjaro KDE / Wayland)
+# Yandex Music on system Electron
 
-Сборка Яндекс Музыки поверх системного `electron42` вместо встроенного Electron,
-поставляемого в официальном deb. Цель — чистая, отслеживаемая `pacman` упаковка,
-нативный Wayland и корректная тень окна, без зависимости от чужой сборки со
-старым встроенным Electron, GTK-обвязкой и расчётом на XWayland.
+A `PKGBUILD` for Arch/Manjaro: Yandex Music running on the **system `electron42`**
+instead of the Electron bundled in the official deb. The build is clean, tracked
+by `pacman`, runs under native Wayland and has a proper window shadow.
 
-## Контекст и отправная точка
+> Russian version: [`ПРОЧТИ.md`](ПРОЧТИ.md).
 
-Исходно использовался AUR-пакет `yandex-music`, который несёт собственную копию
-Electron внутри `/opt/yandex-music` (встроенный бинарь `yandexmusic`). Версия
-встроенного Electron — 38, Chromium 140. На этой сборке безрамочное окно
-приложения **не получало тень** в сессии Plasma Wayland.
+## What it is based on
 
-Причина тени установлена: KWin на Wayland по умолчанию предлагает серверное
-оформление (SSD), а приложения с собственным заголовком (как Yandex Music)
-рисуют клиентское оформление (CSD) и тень рисуют сами. До Electron 41 безрамочные
-окна вообще не поддерживали CSD на Wayland; поддержка (включая собственную тень)
-появилась начиная с Electron 41. Встроенный Electron 38 в эту границу не попадал —
-отсюда отсутствие тени.
+- **Application code** — the official Yandex deb; only `app.asar` is taken from it.
+- **Runtime** — the system `electron42` (the `extra` repo). The Electron bundled
+  in the deb is not used: it is older and, in a Wayland session, draws no shadow
+  for a frameless window (CSD shadows for frameless windows only arrived in
+  Electron 41). On `electron42` the shadow is present.
+- **Unpacking** — `bsdtar` (libarchive), without `alien`, `dpkg` or `rpm`.
 
-## Итоговое решение
+## Package layout and purpose of each part
 
-Запуск того же `app.asar` на системном `electron42` (в репозитории `extra`,
-версия 42.3.0) даёт окно с тенью. Чтобы закрепить это штатно и не зависеть от
-чужой упаковки, собран собственный `PKGBUILD`, который:
+`PKGBUILD` builds the package as follows:
 
-- тянет официальный deb по фиду `latest-linux.yml` (версия определяется
-  динамически, ручной правки `pkgver` не требуется — на пересборке `makepkg`
-  подхватывает актуальную версию);
-- сверяет deb по `sha512` из того же фида;
-- распаковывает deb средствами `bsdtar` (libarchive), без `alien`, `dpkg`, `rpm`;
-- кладёт `app.asar` (и `app.asar.unpacked`, если он есть), а также внешний
-  каталог `assets` (`icon.ico` и `icons/icon_*.png`), который код приложения ищет
-  по `process.resourcesPath/assets`;
-- ставит зависимость от `electron42` и запускает приложение тонкой обёрткой
-  `electron42 /opt/yandex-music/app.asar` — без флага Wayland, нативный режим
-  включается автоопределением;
-- несёт собственный `.desktop` и набор иконок приложения.
+- **Version is resolved dynamically from the `latest-linux.yml` feed.** On every
+  rebuild `makepkg` fetches the current deb and `pkgver()` picks up its number —
+  no manual version editing needed.
+- **Integrity check** — sha512 from the same feed.
+- **`/opt/yandex-music/app.asar`** (and `app.asar.unpacked`, if present) — the
+  application code.
+- **`/opt/yandex-music/assets`** (`icon.ico`, `icons/icon_*.png`) — tray icons;
+  the app looks them up at `process.resourcesPath/assets`.
+- **`/opt/yandex-music/package.json`** — turns the directory into an application
+  so Electron natively reads from it:
+  - the **name** `YandexMusic` → the `~/.config/YandexMusic` profile (cookies and
+    session);
+  - the **version** → a valid semver (the app checks it at startup).
+- **`/opt/yandex-music/launcher.js`** (the application directory's `main`) — a thin
+  shim. Before loading `app.asar` it overrides two paths:
+  - `process.resourcesPath` → `/opt/yandex-music` — so the tray icons are found
+    (otherwise the path points at Electron's own directory);
+  - `app.getAppPath()` → `app.asar` — so the web content in `app/` inside the asar
+    is found.
+- **`/usr/bin/yandex-music`** — a wrapper that runs `electron42 /opt/yandex-music`.
+  No Wayland flag is needed: native mode is enabled by autodetection.
+- **The `.desktop` entry and the application icons** under `hicolor`.
 
-### Что работает в итоге
+## What works
 
-- Чистая сборка на системном Electron, отслеживаемая `pacman`
-  (минус ~300 МБ против встроенной сборки — ушёл дублирующий Electron).
-- Нативный Wayland.
-- Тень окна.
-- Воспроизведение (поток через ALSA, проверено на 176,4 кГц).
-- MPRIS исправен — управление воспроизведением доступно через медиаплеер
-  в системном лотке Plasma.
+- A clean build on the system Electron, tracked by `pacman` (≈300 MB smaller — the
+  duplicated bundled Electron is gone).
+- Native Wayland and the window shadow.
+- The system tray icon and its context menu.
+- Playback (stream through ALSA, verified at 176.4 kHz).
+- MPRIS — control from the media player in the system tray.
 
-### Что не работает
-
-- **Иконка в системном трее не отрисовывается.** Подробности и вывод
-  диагностики — ниже.
-
-## Установка и обновление
+## Install and update
 
 ```
-cd ~/projects/yandex-music-pkg   # каталог с PKGBUILD
+cd ~/projects/yandex-music-pkg   # the directory with PKGBUILD
 makepkg -si
 ```
 
-Обновление при выходе новой версии — повторный `makepkg -si` в том же каталоге:
-свежий deb подтянется из фида автоматически, пакет обновится через `pacman`.
+To update when a new version is released, run `makepkg -si` again in the same
+directory: the fresh deb is pulled from the feed and the package is upgraded via
+`pacman`.
 
-Оговорка о воспроизводимости: фид `latest-linux.yml` всегда указывает на самую
-свежую версию, поэтому собрать через этот PKGBUILD конкретную старую версию
-нельзя — источник всегда «latest».
+> The build is always "latest": the feed points at the newest version, so this
+> `PKGBUILD` cannot build a specific older version.
 
-## Проблема иконки в трее: диагностика и вывод
+---
 
-Иконка трея присутствовала на встроенном Electron 38 и пропала при переходе на
-системный Electron. Диагностика проведена до однозначного корня.
-
-### Что установлено
-
-1. **SNI регистрируется, меню работает.** Элемент приложения присутствует в
-   `org.kde.StatusNotifierWatcher` → `RegisteredStatusNotifierItems`; контекстное
-   меню в трее функционально. Пустое место в лотке — это отрисовка отсутствующей
-   картинки, а не отсутствие самого элемента.
-
-2. **Путь к иконке в коде строится от `process.resourcesPath`.** В `app.asar`,
-   файл `/index.js`:
-
-   ```js
-   const createPngIcon = () => {
-     const sizes = [22, 24, 32, 48, 16];
-     const iconsPath = path.join(process.resourcesPath, "assets", "icons");
-     // перебор icon_${size}x${size}.png → мультиразмерный nativeImage
-   };
-   ```
-
-   У встроенного бинаря `resourcesPath` указывал в `/opt/yandex-music/resources`,
-   где лежал каталог `assets/icons` с файлами `icon_16x16.png … icon_48x48.png`.
-   У системного Electron `resourcesPath` указывает в каталог самого Electron,
-   где этих ассетов нет.
-
-3. **Путь к ассетам — чинится упаковкой и подтверждённо рабочий.** После того как
-   каталог `assets` был положен рядом с `app.asar` (так что `resourcesPath`
-   указывает в `/opt/yandex-music`), иконка при старте **отрисовалась** — то есть
-   png читаются и `nativeImage` собирается корректно. Но иконка тут же исчезла и
-   далее не появлялась.
-
-4. **Корень — Electron не публикует свойство иконки в SNI.** Решающая проверка —
-   `GetAll` живого объекта SNI через D-Bus:
-
-   ```
-   gdbus call --session --dest :1.XXX --object-path /StatusNotifierItem \
-     --method org.freedesktop.DBus.Properties.GetAll org.kde.StatusNotifierItem
-   ```
-
-   В ответе присутствуют `Category`, `Id`, `Status`, `Menu` и пустые
-   `AttentionIcon*`, но **отсутствуют как класс** `IconName`, `IconThemePath` и
-   `IconPixmap`. То есть Electron регистрирует элемент, кладёт в него меню и
-   статус, но само свойство с иконкой в интерфейс не выставляет. Plasma за иконкой
-   по файловой системе не ходит — ей нечего взять из объекта SNI, поэтому
-   отрисовывается пустое место.
-
-### Почему это не лечится здесь
-
-- Со стороны **приложения и упаковки** сделано всё корректное: путь к ассетам
-  восстановлен, `nativeImage` собирается (иконка единожды отрисовалась). Код трея
-  трогает иконку ровно один раз (`tray = new electron.Tray(trayIcon())`), без
-  повторных `setImage`/`new Tray`/`destroy` — само приложение картинку не
-  обнуляет.
-- Проблема **не в режиме отображения**: иконка отсутствует и в нативном Wayland,
-  и на XWayland (`--ozone-platform=x11`).
-- Проблема **не в отсутствии libappindicator**: в системе есть GTK3-вариант
-  (`/usr/lib/libappindicator3.so.1`), Electron его всё равно не задействует.
-- Откат на старший Electron не помогает: на `electron39` иконка тоже не
-  появляется, а тень при этом пропадает (CSD для безрамочных окон есть только
-  с 41/42).
-
-Вывод: дефект в публикации иконки SNI конкретной сборкой `electron42`
-(и `electron39`) в данном окружении. Упаковочными средствами не обходится.
-
-### Матрица «версия Electron → тень / трей»
-
-| Electron            | Тень | Иконка в трее |
-|---------------------|------|---------------|
-| 38 (встроенный)     | нет  | да            |
-| 39 (системный)      | нет  | нет           |
-| 42 (системный)      | да   | нет           |
-
-## Известные несущественные сообщения при запуске
-
-В stderr при старте на системном Electron встречаются, и к делу не относятся:
-
-- `qtpaths: command not found` — отсутствует Qt5-утилита, на работу не влияет.
-- `Failed to load module "appmenu-gtk-module"` — глобальное меню GTK, не трей.
-- `wayland_wp_color_manager … Unable to set image transfer function` — побочный
-  шум нативного Wayland; одновременно служит индикатором, что Electron запущен
-  именно в нативном Wayland (а не через XWayland).
-
-## Открытый вопрос / на будущее
-
-- **Иконка трея.** Реальные развязки: принять текущее состояние (рекомендовано —
-  основное работает, управление через MPRIS-виджет Plasma); либо сообщить о баге
-  апстриму Electron и дождаться исправления, оставаясь на `electron42`. Откат на
-  встроенный Electron 38 ради трея отвергнут — теряется тень и смысл чистой
-  сборки.
+Debugging history, the reasoning behind the decisions, and the pitfalls (window
+shadow, the tray-icon path, profile and session, version and semver, file
+conflicts on install) are in [`ОТЛАДКА.md`](ОТЛАДКА.md) (in Russian).

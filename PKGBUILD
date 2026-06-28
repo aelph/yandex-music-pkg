@@ -5,8 +5,10 @@
 # latest-linux.yml: на каждой пересборке makepkg тянет актуальный deb, pkgver()
 # подхватывает его номер, пакет обновляется штатно через pacman.
 #
-# Запуск — тонкая обёртка `electron42 /opt/yandex-music/app.asar` (нативный
-# Wayland включается автоопределением, без явного флага).
+# Запуск — обёртка `electron42 /opt/yandex-music` (каталог-приложение со своим
+# package.json для верных имени/версии). Шим main launcher.js чинит
+# process.resourcesPath (иконка трея) и app.getAppPath (web-контент в asar).
+# Нативный Wayland включается автоопределением, без явного флага.
 
 pkgname=yandex-music
 pkgver=5.108.3
@@ -86,16 +88,49 @@ package() {
     fi
 
     # Внешние ресурсы (icon.ico и icons/icon_*.png для трея). Код приложения
-    # ищет их по process.resourcesPath/assets; при запуске обёрткой
-    # resourcesPath = /opt/yandex-music, поэтому assets кладём именно сюда.
+    # ищет их по process.resourcesPath/assets, поэтому кладём assets рядом с
+    # app.asar; шим-лаунчер ниже подменяет resourcesPath на /opt/yandex-music.
     if [ -d "$root/resources/assets" ]; then
         cp -a "$root/resources/assets" "$pkgdir/opt/yandex-music/"
     fi
 
-    # Обёртка: системный Electron, без флага Wayland (автоопределение).
+    # Делаем /opt/yandex-music каталогом-приложением: Electron читает этот
+    # package.json и НАТИВНО берёт из него имя и версию. Это критично:
+    #   * name=YandexMusic -> профиль ~/.config/YandexMusic (куки/сессия). Иначе
+    #     Electron взял бы "Electron" и приложение ушло бы в чужой профиль.
+    #   * version -> валидный semver; приложение падает, если версия "0.0".
+    # Запускать же через app.setName()/setVersion() в рантайме нельзя — это
+    # ломает загрузку контента (music-application://). Поэтому только package.json.
+    install -Dm644 /dev/stdin "$pkgdir/opt/yandex-music/package.json" <<EOF
+{ "name": "YandexMusic", "version": "$pkgver", "main": "launcher.js" }
+EOF
+
+    # Шим-лаунчер (main каталога-приложения). До загрузки app.asar подменяет:
+    #   * process.resourcesPath -> /opt/yandex-music (где лежат assets/icons;
+    #     иначе указывает на каталог самого Electron и иконка трея пустая).
+    #   * app.getAppPath()      -> .../app.asar (по умолчанию вернул бы каталог
+    #     приложения, и не нашёлся бы web-контент из app/ внутри asar).
+    install -Dm644 /dev/stdin "$pkgdir/opt/yandex-music/launcher.js" <<'EOF'
+'use strict';
+const APP_DIR = '/opt/yandex-music';
+const ASAR = APP_DIR + '/app.asar';
+const { app } = require('electron');
+
+Object.defineProperty(process, 'resourcesPath', {
+  value: APP_DIR, configurable: true,
+});
+Object.defineProperty(app, 'getAppPath', {
+  value: () => ASAR, configurable: true,
+});
+
+require(ASAR);
+EOF
+
+    # Обёртка: системный Electron запускает каталог-приложение /opt/yandex-music
+    # (нативный Wayland — автоопределением, без явного флага).
     install -Dm755 /dev/stdin "$pkgdir/usr/bin/yandex-music" <<'EOF'
 #!/bin/sh
-exec electron42 /opt/yandex-music/app.asar "$@"
+exec electron42 /opt/yandex-music "$@"
 EOF
 
     # Собственный ярлык — полностью под контролем.
