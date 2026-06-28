@@ -1,0 +1,15 @@
+# Артефакты сборки makepkg
+/src/
+/pkg/
+/srcpkg/
+
+# Собранные пакеты и скачанные исходники
+*.pkg.tar.zst
+*.pkg.tar.xz
+*.pkg.tar
+*.src.tar.gz
+*.deb
+*.log
+
+# Контрольные суммы и временные файлы makepkg
+.pkgver
