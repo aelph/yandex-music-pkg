@@ -10,14 +10,16 @@
 # process.resourcesPath (иконка трея) и app.getAppPath (web-контент в asar).
 # Нативный Wayland включается автоопределением, без явного флага.
 
-pkgname=yandex-music
-pkgver=5.108.3
+pkgname=yandex-music-system-electron
+pkgver=5.109.1
 pkgrel=1
 pkgdesc="Яндекс Музыка на системном Electron"
 arch=('x86_64')
 url="https://music.yandex.ru/"
 license=('custom')
 depends=('electron42')
+provides=('yandex-music')
+conflicts=('yandex-music')
 makedepends=('curl' 'libarchive' 'openssl' 'coreutils')
 options=('!strip' '!emptydirs')
 source=()
@@ -161,5 +163,5 @@ EOF
 
     lic=$(find "$srcdir/extract" -maxdepth 5 -name 'LICENSE.electron.txt' | head -1)
     [ -n "$lic" ] && install -Dm644 "$lic" \
-        "$pkgdir/usr/share/licenses/yandex-music/LICENSE.electron.txt"
+        "$pkgdir/usr/share/licenses/$pkgname/LICENSE.electron.txt"
 }

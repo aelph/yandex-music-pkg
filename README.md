@@ -4,6 +4,11 @@ A `PKGBUILD` for Arch/Manjaro: Yandex Music running on the **system `electron42`
 instead of the Electron bundled in the official deb. The build is clean, tracked
 by `pacman`, runs under native Wayland and has a proper window shadow.
 
+The package is named **`yandex-music-system-electron`** and is independent of the
+AUR package `yandex-music` it once derived from: AUR helpers will not offer
+"updates" for it. Thanks to `provides`/`conflicts` it cleanly replaces an
+installed `yandex-music` and satisfies dependencies on it.
+
 > Russian version: [`ПРОЧТИ.md`](ПРОЧТИ.md).
 
 ## What it is based on
