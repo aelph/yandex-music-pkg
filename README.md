@@ -56,16 +56,38 @@ installed `yandex-music` and satisfies dependencies on it.
 - Playback (stream through ALSA, verified at 176.4 kHz).
 - MPRIS — control from the media player in the system tray.
 
-## Install and update
+## Install
 
 ```
 cd ~/projects/yandex-music-pkg   # the directory with PKGBUILD
 makepkg -si
 ```
 
-To update when a new version is released, run `makepkg -si` again in the same
-directory: the fresh deb is pulled from the feed and the package is upgraded via
-`pacman`.
+## Update
+
+Everything is done by `./update.sh`:
+
+- `./update.sh check` — compare the installed version against the feed. Exit
+  code 10 means an update is available.
+- `./update.sh` — if a new version is out: `makepkg -si` (the fresh deb comes
+  from the feed, `makepkg` itself rewrites `pkgver` in `PKGBUILD`), verify the
+  installed version, commit `Update <version>`.
+- `./update.sh rollback [version]` — roll back to a previously built local
+  package. Built `.pkg.tar.zst` files are deliberately kept in the directory:
+  an older version cannot be rebuilt, the feed only serves the latest one.
+- `./update.sh notify` — a quiet check with a `notify-send` desktop
+  notification; exits silently when the network is unavailable.
+
+### Update notifications
+
+A user systemd timer runs the check daily (units in `~/.config/systemd/user/`):
+
+```
+systemctl --user enable --now yandex-music-update-check.timer
+```
+
+When a new version is released a desktop notification shows up; then just enter
+the directory and run `./update.sh`.
 
 > The build is always "latest": the feed points at the newest version, so this
 > `PKGBUILD` cannot build a specific older version.
