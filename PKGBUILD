@@ -11,7 +11,7 @@
 # Нативный Wayland включается автоопределением, без явного флага.
 
 pkgname=yandex-music-system-electron
-pkgver=5.115.3
+pkgver=5.116.3
 pkgrel=1
 pkgdesc="Яндекс Музыка на системном Electron"
 arch=('x86_64')
