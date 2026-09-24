@@ -112,7 +112,7 @@ EOF
     #     иначе указывает на каталог самого Electron и иконка трея пустая).
     #   * app.getAppPath()      -> .../app.asar (по умолчанию вернул бы каталог
     #     приложения, и не нашёлся бы web-контент из app/ внутри asar).
-    # Кроме того, читает раскладку кнопок окна из настроек рабочего стола (KDE: kwinrc, иначе gsettings) и внедряет CSS, который переставляет кнопки собственного заголовка приложения: на Linux окно без рамки, кнопки рисует веб-страница и всегда справа.
+    # Кроме того, читает раскладку кнопок окна из настроек рабочего стола (KDE — kwinrc, Xfce — xfconf, GNOME, Cinnamon и MATE — gsettings) и внедряет CSS, который переставляет кнопки собственного заголовка приложения: на Linux окно без рамки, кнопки рисует веб-страница и всегда справа.
     install -Dm644 /dev/stdin "$pkgdir/opt/yandex-music/launcher.js" <<'EOF'
 'use strict';
 const APP_DIR = '/opt/yandex-music';
@@ -147,12 +147,29 @@ function readButtonLayout() {
     return left && right ? { left, right } : null;
   }
 
-  // GNOME и прочие GTK-окружения: 'close,maximize,minimize:icon'.
-  const v = run('gsettings', ['get', 'org.gnome.desktop.wm.preferences', 'button-layout']);
-  if (!v) return null;
-  const [l = '', r = ''] = v.replace(/^'|'$/g, '').split(':');
-  const names = s => s.split(',').filter(n => ['close', 'maximize', 'minimize'].includes(n));
-  return { left: names(l), right: names(r) };
+  // Строка вида 'close,maximize,minimize:icon' (схема GNOME и её производных).
+  const gsettings = (schema) => {
+    const v = run('gsettings', ['get', schema, 'button-layout']);
+    if (!v) return null;
+    const [l = '', r = ''] = v.replace(/^'|'$/g, '').split(':');
+    const names = s => s.split(',').filter(n => ['close', 'maximize', 'minimize'].includes(n));
+    return { left: names(l), right: names(r) };
+  };
+
+  if (desktop.includes('XFCE')) {
+    // xfwm4: 'O|HMC', где '|' — заголовок; H — свернуть, M — развернуть, C — закрыть. Без явной настройки действует значение по умолчанию.
+    const XFCE = { C: 'close', M: 'maximize', H: 'minimize' };
+    const v = run('xfconf-query', ['-c', 'xfwm4', '-p', '/general/button_layout']) || 'O|HMC';
+    const [l, r = ''] = v.split('|');
+    const names = s => [...s].map(c => XFCE[c]).filter(Boolean);
+    return { left: names(l), right: names(r) };
+  }
+  if (desktop.includes('X-Cinnamon')) return gsettings('org.cinnamon.desktop.wm.preferences');
+  if (desktop.includes('MATE')) return gsettings('org.mate.Marco.general');
+  if (desktop.includes('GNOME')) return gsettings('org.gnome.desktop.wm.preferences');
+
+  // Неизвестное окружение — заголовок не трогаем.
+  return null;
 }
 
 // CSS для заголовка приложения (компонент TitleBar). Кнопки в DOM идут в порядке «свернуть, развернуть, закрыть»; класс ищем по префиксу, так как хеш в имени меняется от версии к версии.
