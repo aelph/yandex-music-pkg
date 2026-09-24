@@ -65,6 +65,8 @@ update)
     fi
     echo "Обновление $cur -> $new"
     # Версию в PKGBUILD правит сам makepkg: pkgver() читает номер из фида.
+    # Новая версия — первая её сборка, поэтому pkgrel сбрасывается в 1.
+    sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
     makepkg -si
     got=$(current_version)
     if [[ "$got" != "$new" ]]; then
@@ -90,7 +92,7 @@ rollback)
         echo "Пересобрать старую версию нельзя: фид отдаёт только latest."
         exit 0
     fi
-    pkgfile=$(ls -1 "${PKGNAME}-${ver}"-*-x86_64.pkg.tar.zst 2>/dev/null | head -1) || true
+    pkgfile=$(ls -1 "${PKGNAME}-${ver}"-*-x86_64.pkg.tar.zst 2>/dev/null | sort -V | tail -1) || true
     if [[ -z "${pkgfile:-}" ]]; then
         echo "Сборка версии $ver не найдена." >&2
         exit 1

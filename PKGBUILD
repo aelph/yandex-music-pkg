@@ -12,7 +12,7 @@
 
 pkgname=yandex-music-system-electron
 pkgver=5.120.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Яндекс Музыка на системном Electron"
 arch=('x86_64')
 url="https://music.yandex.ru/"
@@ -112,11 +112,13 @@ EOF
     #     иначе указывает на каталог самого Electron и иконка трея пустая).
     #   * app.getAppPath()      -> .../app.asar (по умолчанию вернул бы каталог
     #     приложения, и не нашёлся бы web-контент из app/ внутри asar).
+    # Кроме того, читает раскладку кнопок окна из настроек рабочего стола (KDE: kwinrc, иначе gsettings) и внедряет CSS, который переставляет кнопки собственного заголовка приложения: на Linux окно без рамки, кнопки рисует веб-страница и всегда справа.
     install -Dm644 /dev/stdin "$pkgdir/opt/yandex-music/launcher.js" <<'EOF'
 'use strict';
 const APP_DIR = '/opt/yandex-music';
 const ASAR = APP_DIR + '/app.asar';
 const { app } = require('electron');
+const { execFileSync } = require('child_process');
 
 Object.defineProperty(process, 'resourcesPath', {
   value: APP_DIR, configurable: true,
@@ -124,6 +126,61 @@ Object.defineProperty(process, 'resourcesPath', {
 Object.defineProperty(app, 'getAppPath', {
   value: () => ASAR, configurable: true,
 });
+
+// Раскладка кнопок окна из настроек рабочего стола: { left: [...], right: [...] } из имён close/maximize/minimize. null — настройку прочитать не удалось.
+function readButtonLayout() {
+  const run = (cmd, args) => {
+    try { return execFileSync(cmd, args, { encoding: 'utf8', timeout: 2000 }).trim(); }
+    catch { return null; }
+  };
+  const desktop = (process.env.XDG_CURRENT_DESKTOP || '').split(':');
+
+  if (desktop.includes('KDE')) {
+    // Буквы KWin: X — закрыть, A — развернуть, I — свернуть; прочие не нужны.
+    const KDE = { X: 'close', A: 'maximize', I: 'minimize' };
+    const side = (key, def) => {
+      const v = run('kreadconfig6', ['--file', 'kwinrc', '--group', 'org.kde.kdecoration2', '--key', key, '--default', def]);
+      return v === null ? null : [...v].map(c => KDE[c]).filter(Boolean);
+    };
+    const left = side('ButtonsOnLeft', 'MS');
+    const right = side('ButtonsOnRight', 'HIAX');
+    return left && right ? { left, right } : null;
+  }
+
+  // GNOME и прочие GTK-окружения: 'close,maximize,minimize:icon'.
+  const v = run('gsettings', ['get', 'org.gnome.desktop.wm.preferences', 'button-layout']);
+  if (!v) return null;
+  const [l = '', r = ''] = v.replace(/^'|'$/g, '').split(':');
+  const names = s => s.split(',').filter(n => ['close', 'maximize', 'minimize'].includes(n));
+  return { left: names(l), right: names(r) };
+}
+
+// CSS для заголовка приложения (компонент TitleBar). Кнопки в DOM идут в порядке «свернуть, развернуть, закрыть»; класс ищем по префиксу, так как хеш в имени меняется от версии к версии.
+function titleBarCSS(layout) {
+  const root = '[class*="TitleBar_root__"]';
+  const dom = ['minimize', 'maximize', 'close'];
+  const order = [...layout.left, ...layout.right];
+  const rules = [`${root}{justify-content:flex-start!important;flex-direction:row!important}`];
+  dom.forEach((name, i) => {
+    const sel = `${root}>button:nth-child(${i + 1})`;
+    const pos = order.indexOf(name);
+    if (pos < 0) {
+      rules.push(`${sel}{display:none!important}`);
+      return;
+    }
+    const push = name === layout.right[0] ? 'margin-inline-start:auto!important;' : '';
+    rules.push(`${sel}{order:${pos}!important;${push}}`);
+  });
+  return rules.join('\n');
+}
+
+const layout = readButtonLayout();
+if (layout) {
+  const css = titleBarCSS(layout);
+  app.on('web-contents-created', (_e, wc) => {
+    wc.on('dom-ready', () => { wc.insertCSS(css).catch(() => {}); });
+  });
+}
 
 require(ASAR);
 EOF

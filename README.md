@@ -43,6 +43,8 @@ installed `yandex-music` and satisfies dependencies on it.
     (otherwise the path points at Electron's own directory);
   - `app.getAppPath()` → `app.asar` — so the web content in `app/` inside the asar
     is found.
+
+  It also arranges the window buttons as the desktop does. On Linux the window is frameless and the buttons are drawn by the web page, always on the right. The shim reads the button layout (KDE — `ButtonsOnLeft`/`ButtonsOnRight` from `kwinrc`; otherwise — `button-layout` from `gsettings`) and injects CSS that reorders the title bar buttons accordingly. The layout is read at startup.
 - **`/usr/bin/yandex-music`** — a wrapper that runs `electron42 /opt/yandex-music`.
   No Wayland flag is needed: native mode is enabled by autodetection.
 - **The `.desktop` entry and the application icons** under `hicolor`.
