@@ -73,7 +73,7 @@ Everything is done by `./update.sh`:
   code 10 means an update is available.
 - `./update.sh` — `git pull --ff-only` first; if a new version is out: `makepkg -si` (the fresh deb comes
   from the feed, `makepkg` itself rewrites `pkgver` in `PKGBUILD`), verify the
-  installed version, commit `Update <version>` (skipped if that commit was already pulled from another machine).
+  installed version, commit `Update <version>` (skipped if that commit was already pulled from another machine), `git push`.
 - `./update.sh rollback [version]` — roll back to a previously built local
   package. Built `.pkg.tar.zst` files are deliberately kept in the directory:
   an older version cannot be rebuilt, the feed only serves the latest one.
