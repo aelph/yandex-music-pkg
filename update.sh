@@ -58,6 +58,8 @@ notify)
     ;;
 
 update)
+    # Забрать коммиты с других машин, чтобы не создавать дублирующий «Update <версия>».
+    git pull --ff-only
     cur=$(current_version); new=$(latest_version)
     if [[ $(vercmp "$new" "$cur") -le 0 ]]; then
         echo "Уже актуальная версия: $cur"
@@ -66,7 +68,10 @@ update)
     echo "Обновление $cur -> $new"
     # Версию в PKGBUILD правит сам makepkg: pkgver() читает номер из фида.
     # Новая версия — первая её сборка, поэтому pkgrel сбрасывается в 1.
-    sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+    # Если PKGBUILD этой версии уже подтянут с другой машины, pkgrel не трогаем.
+    if [[ $(grep -oP '(?<=^pkgver=).*' PKGBUILD) != "$new" ]]; then
+        sed -i 's/^pkgrel=.*/pkgrel=1/' PKGBUILD
+    fi
     makepkg -si
     got=$(current_version)
     if [[ "$got" != "$new" ]]; then
