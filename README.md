@@ -78,7 +78,8 @@ Everything is done by `./update.sh`:
   package. Built `.pkg.tar.zst` files are deliberately kept in the directory:
   an older version cannot be rebuilt, the feed only serves the latest one.
 - `./update.sh notify` — a quiet check with a `notify-send` desktop
-  notification; exits silently when the network is unavailable.
+  notification. Without network (e.g. right after boot) it retries for up to
+  5 minutes, then exits silently.
 
 ### Update notifications
 

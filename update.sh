@@ -45,10 +45,17 @@ check)
     ;;
 
 notify)
-    # Для systemd-таймера: молча выйти при недоступности сети,
+    # Для systemd-таймера: молча выйти, если сеть так и не появилась,
     # показать уведомление только если вышла новая версия.
+    # Persistent=true запускает пропущенную проверку сразу после загрузки,
+    # когда сети может ещё не быть: повторять попытки до 5 минут.
     cur=$(current_version)
-    new=$(latest_version) || exit 0
+    new=""
+    for _ in {1..10}; do
+        new=$(latest_version 2>/dev/null) && [[ -n "$new" ]] && break
+        new=""
+        sleep 30
+    done
     [[ -n "$new" ]] || exit 0
     if [[ $(vercmp "$new" "$cur") -gt 0 ]]; then
         notify-send -a "Яндекс Музыка" -i yandex-music -u critical \
