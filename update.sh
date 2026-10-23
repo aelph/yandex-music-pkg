@@ -6,6 +6,8 @@
 #   ./update.sh notify     — тихая проверка с уведомлением на рабочий стол (для systemd-таймера)
 #   ./update.sh rollback   — показать локальные сборки для отката
 #   ./update.sh rollback <версия> — установить указанную локальную сборку
+#
+# Код возврата 11 у check и update — новая версия опубликована битой (см. release_ok).
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -13,10 +15,26 @@ cd "$(dirname "$0")"
 FEED="https://desktop.app.music.yandex.net/stable/latest-linux.yml"
 PKGNAME="yandex-music-system-electron"
 
-latest_version() {
-    # В фиде версия иногда содержит дефис (пререлизный суффикс) — приводим к
-    # виду, который использует PKGBUILD.
-    curl -fsSL "$FEED" | awk '/^version:/{gsub(/-/,".",$2); print $2; exit}'
+# Защита от битых релизов, общая для update.sh в yandex-music-pkg, max-bin и claude-desktop.
+# 20.10.2026 Яндекс опубликовал Яндекс Музыку 5.124.1, чей deb весил 96 байт: в ar-архиве лежал только пустой индекс «__.SYMDEF SORTED», без control.tar и data.tar. Фид указывал именно этот размер и контрольную сумму именно этого файла, поэтому проверка суммы релиз пропустила, а сборка упала на распаковке.
+# Настоящие сборки всех трёх программ весят десятки и сотни мегабайт, поэтому размер пакета из метаданных источника сверяется с порогом в 1 МиБ. Релиз меньше порога или без указанного размера считается битым: check и update сообщают о нём и выходят с кодом 11, notify молчит до тех пор, пока издатель не перевыпустит пакет.
+MIN_SIZE=$((1024 * 1024))
+
+release_ok() {
+    [[ "${1:-}" =~ ^[0-9]+$ ]] && (( $1 >= MIN_SIZE ))
+}
+
+broken_release() {
+    echo "Версия $1 опубликована битой (размер пакета: ${2:-не указан} байт), обновление пропущено." >&2
+    exit 11
+}
+
+latest_entry() {
+    # Выводит «версия размер». В фиде версия иногда содержит дефис (пререлизный суффикс) — приводим к виду, который использует PKGBUILD. Размер есть только у элементов списка files, у верхнего уровня фида его нет.
+    curl -fsSL "$FEED" | awk '
+        /^version:/ { gsub(/-/, ".", $2); v = $2 }
+        /^[[:space:]]+size:/ && s == "" { s = $2 }
+        END { if (v != "") print v, s }'
 }
 
 current_version() {
@@ -33,10 +51,12 @@ cmd="${1:-update}"
 
 case "$cmd" in
 check)
-    cur=$(current_version); new=$(latest_version)
+    cur=$(current_version); entry=$(latest_entry)
+    read -r new size <<<"$entry"
     echo "Установленная версия: $cur"
     echo "Версия в фиде:        $new"
     if [[ $(vercmp "$new" "$cur") -gt 0 ]]; then
+        release_ok "$size" || broken_release "$new" "$size"
         echo "Доступно обновление. Запустите: ./update.sh"
         exit 10
     else
@@ -50,14 +70,16 @@ notify)
     # Persistent=true запускает пропущенную проверку сразу после загрузки,
     # когда сети может ещё не быть: повторять попытки до 5 минут.
     cur=$(current_version)
-    new=""
+    entry=""
     for _ in {1..10}; do
-        new=$(latest_version 2>/dev/null) && [[ -n "$new" ]] && break
-        new=""
+        entry=$(latest_entry 2>/dev/null) && [[ -n "$entry" ]] && break
+        entry=""
         sleep 30
     done
-    [[ -n "$new" ]] || exit 0
-    if [[ $(vercmp "$new" "$cur") -gt 0 ]]; then
+    [[ -n "$entry" ]] || exit 0
+    read -r new size <<<"$entry"
+    # О битом релизе не уведомляем: обновиться на него всё равно нельзя.
+    if [[ $(vercmp "$new" "$cur") -gt 0 ]] && release_ok "$size"; then
         notify-send -a "Яндекс Музыка" -i yandex-music -u critical \
             "Вышло обновление Яндекс Музыки $new" \
             "Установлена версия $cur. Для обновления запустите: $(pwd)/update.sh"
@@ -67,11 +89,13 @@ notify)
 update)
     # Забрать коммиты с других машин, чтобы не создавать дублирующий «Update <версия>».
     git pull --ff-only
-    cur=$(current_version); new=$(latest_version)
+    cur=$(current_version); entry=$(latest_entry)
+    read -r new size <<<"$entry"
     if [[ $(vercmp "$new" "$cur") -le 0 ]]; then
         echo "Уже актуальная версия: $cur"
         exit 0
     fi
+    release_ok "$size" || broken_release "$new" "$size"
     echo "Обновление $cur -> $new"
     # Версию в PKGBUILD правит сам makepkg: pkgver() читает номер из фида.
     # Новая версия — первая её сборка, поэтому pkgrel сбрасывается в 1.
