@@ -1,6 +1,6 @@
 # Yandex Music on system Electron
 
-В коде рендерера версий 5.123.4 и 5.124.2 Яндекс добавил хук, который принудительно удерживает тёмную тему на главной странице и на странице видео, если сервер выдал эксперимент WebNextNewWaveTab со значением on или on1. Он следит за классом `<body>` через MutationObserver и возвращает тёмный класс при любой попытке его снять. Как ответили в компании – «Это часть нового визуала». Технически можно добавить в лаунчер скрипт, снимающий принудительный тёмный класс, но из-за наблюдателя за классом это будет хрупкий хак против логики самого приложения.
+In the renderer code of versions 5.123.4 and 5.124.2 Yandex added a hook that forces the dark theme on the main page and on the video page whenever the server serves the WebNextNewWaveTab experiment with the value on or on1. It watches the `<body>` class through a MutationObserver and restores the dark class on every attempt to remove it. The company's reply was: "This is part of the new visual design." Technically the launcher could inject a script that strips the forced dark class, but because of the class observer that would be a fragile hack against the application's own logic.
 
 A `PKGBUILD` for Arch/Manjaro: Yandex Music running on the **system `electron42`**
 instead of the Electron bundled in the official deb. The build is clean, tracked
