@@ -63,7 +63,8 @@ installed `yandex-music` and satisfies dependencies on it.
 ## Install
 
 ```
-cd ~/projects/yandex-music-pkg   # the directory with PKGBUILD
+git clone https://github.com/aelph/yandex-music-pkg.git
+cd yandex-music-pkg
 makepkg -si
 ```
 
